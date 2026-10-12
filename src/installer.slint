@@ -1,0 +1,368 @@
+// Кастомный чекбокс в стиле Киберпанк
+component CyberCheckBox inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    
+    height: 30px;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: 10px;
+        alignment: start;
+        
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-width: 1px;
+            border-color: #8F0030;
+            background: root.checked ? #8F0030 : #12000a;
+            drop-shadow-color: #ff0000;
+            drop-shadow-blur: root.checked ? 4px : 0px;
+            
+            if root.checked : Text {
+                text: "✕";
+                color: #ffffff;
+                font-size: 10px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        
+        Text {
+            text: root.text;
+            color: #ffffff;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.checked = !root.checked; }
+    }
+}
+
+// Стандартная кнопка с поддержкой отключения (enabled)
+component CyberButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 110px;
+    height: 30px;
+    background: !root.enabled ? #202020 : (ta.has-hover ? #8F0030 : #12000a);
+    border-width: 1px;
+    border-color: !root.enabled ? #404040 : #8F0030;
+    drop-shadow-color: #ff0000;
+    drop-shadow-blur: root.enabled && ta.has-hover ? 6px : 0px;
+    animate background { duration: 120ms; }
+
+    Text {
+        text: root.text;
+        color: !root.enabled ? #707070 : #ffffff;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        clicked => { if (root.enabled) { root.clicked(); } }
+    }
+}
+
+// Кнопки управления окном _ и X
+component CyberIconButton inherits Rectangle {
+    in property <string> glyph;
+    callback clicked();
+
+    width: 32px;
+    height: 32px;
+    background: ta.has-hover ? #8F0030 : transparent;
+    animate background { duration: 120ms; }
+
+    Text {
+        text: root.glyph;
+        color: #ff2a55;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "ACF APPS INSTALLER";
+    width: 800px;
+    height: 480px;
+    no-frame: true;
+    background: transparent;
+
+    // Свойства MSI-сессии (для чтения и записи в Rust)
+    in-out property <int> current-step: 0; // 0: Welcome, 1: License, 2: Features, 3: Progress, 4: Finished
+    in-out property <bool> accept-license: false;
+    in-out property <bool> install-organizer: true;
+    in-out property <string> install-path: "C:\\Program Files"; // Базовый путь без папки ACF
+    in property <float> progress-value: 0.0;
+    in property <string> current-status-text: "Инициализация...";
+
+    // Коллбеки стандартного окна
+    callback close-clicked();
+    callback minimize-clicked();
+    callback move-window(length, length);
+    
+    // Коллбеки логики MSI
+    callback start-installation(); 
+    callback select-folder-clicked(); // Новый коллбек выбора папки
+
+    // Главная неоновая рамка
+    Rectangle {
+        x: 15px;
+        y: 15px;
+        width: parent.width - 30px;
+        height: parent.height - 30px;
+        background: #000000;
+        border-width: 1px;
+        border-color: #8F0030;
+        drop-shadow-color: #ff0000;
+        drop-shadow-blur: 15px;
+
+        // ---------- ВЕРХНЯЯ ПАНЕЛЬ (DRAG AREA) ----------
+        TouchArea {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: 34px;
+            moved => {
+                root.move-window(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+            }
+        }
+
+        Rectangle {
+            y: 33px;
+            width: parent.width;
+            height: 1px;
+            background: #8F0030;
+            drop-shadow-color: #ff0000;
+            drop-shadow-blur: 8px;
+        }
+
+        Text {
+            x: 15px;
+            y: 0px;
+            height: 34px;
+            text: "ACF APPS INSTALLER // SETUP WIZARD";
+            color: #ff2a55;
+            font-size: 14px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+
+        CyberIconButton {
+            x: parent.width - 64px;
+            y: 1px;
+            glyph: "–";
+            clicked => { root.minimize-clicked(); }
+        }
+
+        CyberIconButton {
+            x: parent.width - 32px;
+            y: 1px;
+            glyph: "✕";
+            clicked => { root.close-clicked(); }
+        }
+
+        // ---------- ЛЕВАЯ БОКОВАЯ ПАНЕЛЬ ----------
+        Rectangle {
+            x: 0px;
+            y: 34px;
+            width: 180px;
+            height: parent.height - 34px - 65px;
+            background: #080006;
+            border-width: 1px;
+            border-color: #20000a;
+
+            VerticalLayout {
+                padding-left: 20px;
+                padding-top: 30px;
+                spacing: 20px;
+                alignment: start;
+
+                Text { text: "01 // ПРИВЕТСТВИЕ"; color: root.current-step == 0 ? #ff2a55 : #606060; font-size: 12px; font-weight: 700; }
+                Text { text: "02 // ЛИЦЕНЗИЯ"; color: root.current-step == 1 ? #ff2a55 : #606060; font-size: 12px; font-weight: 700; }
+                Text { text: "03 // НАСТРОЙКИ"; color: root.current-step == 2 ? #ff2a55 : #606060; font-size: 12px; font-weight: 700; }
+                Text { text: "04 // УСТАНОВКА"; color: root.current-step == 3 ? #ff2a55 : #606060; font-size: 12px; font-weight: 700; }
+                Text { text: "05 // ГОТОВО"; color: root.current-step == 4 ? #ff2a55 : #606060; font-size: 12px; font-weight: 700; }
+            }
+        }
+
+        Rectangle {
+            x: 180px;
+            y: 34px;
+            width: 1px;
+            height: parent.height - 34px - 65px;
+            background: #8F0030;
+        }
+
+        // ---------- ЦЕНТРАЛЬНЫЙ КОНТЕНТ ----------
+        Rectangle {
+            x: 195px;
+            y: 55px;
+            width: parent.width - 215px;
+            height: parent.height - 34px - 65px - 40px;
+            background: transparent;
+
+            // ШАГ 0: Приветствие
+            if root.current-step == 0 : VerticalLayout {
+                spacing: 15px;
+                Text { text: "Вас приветствует мастер установки ACF Apps"; color: #ffffff; font-size: 22px; font-weight: 700; }
+                Text { 
+                    text: "Программа установит компоненты среды ACF на ваш компьютер.\n\nНажмите «Далее» для продолжения или «Отмена» для выхода."; 
+                    color: #cccccc; font-size: 14px; wrap: word-wrap;
+                }
+            }
+
+            // ШАГ 1: Лицензия
+            if root.current-step == 1 : VerticalLayout {
+                spacing: 12px;
+                alignment: stretch;
+                Text { text: "Лицензионное соглашение"; color: #ffffff; font-size: 18px; font-weight: 700; }
+                
+                Rectangle {
+                    height: 160px;
+                    background: #12000a;
+                    border-width: 1px;
+                    border-color: #8F0030;
+                    padding: 10px;
+                    
+                    Flickable {
+                        Text {
+                            text: "ЛАДНО ЭТО ЗАГЛУШКА ПОКА";
+                            color: #a0a0a0; font-size: 12px; wrap: word-wrap;
+                        }
+                    }
+                }
+                
+                CyberCheckBox {
+                    text: "Я принимаю условия данного соглашения";
+                    checked <=> root.accept-license;
+                }
+            }
+
+            // ШАГ 2: Путь и Обзор
+            if root.current-step == 2 : VerticalLayout {
+                spacing: 15px;
+                Text { text: "Выбор компонентов и директории"; color: #ffffff; font-size: 18px; font-weight: 700; }
+                
+                CyberCheckBox {
+                    text: "acf_app_organizer (Управление и запуск приложений)";
+                    checked <=> root.install-organizer;
+                }
+
+                Text { text: "Базовый путь установки (внутри будет автоматически создана папка ACF):"; color: #ffffff; font-size: 14px; }
+                
+                HorizontalLayout {
+                    spacing: 10px;
+                    height: 32px;
+                    
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: #12000a;
+                        border-width: 1px;
+                        border-color: #8F0030;
+                        
+                        TextInput {
+                            x: 8px;
+                            text: root.install-path;
+                            color: #ffffff;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            edited => { root.install-path = self.text; }
+                        }
+                    }
+
+                    CyberButton {
+                        width: 40px;
+                        text: "...";
+                        clicked => { root.select-folder-clicked(); }
+                    }
+                }
+            }
+
+            // ШАГ 3: Прогресс
+            if root.current-step == 3 : VerticalLayout {
+                spacing: 20px;
+                alignment: center;
+                
+Text { text: "Выполняется установка компонентов..."; color: #ffffff; font-size: 18px; font-weight: 700; horizontal-alignment: center; }
+Rectangle {
+width: parent.width - 40px;
+height: 20px;
+background: #12000a;
+border-width: 1px;
+border-color: #8F0030;
+drop-shadow-color: #ff0000;
+drop-shadow-blur: 4px;
+Rectangle {
+x: 0px;
+y: 0px;
+width: parent.width * root.progress-value;
+height: parent.height;
+background: #ff2a55;
+}
+}
+Text { text: root.current-status-text; color: #ff2a55; font-size: 12px; horizontal-alignment: center; }
+}
+// ШАГ 4: Завершение
+if root.current-step == 4 : VerticalLayout {
+spacing: 15px;
+Text { text: "Установка успешно завершена!"; color: #00ff66; font-size: 22px; font-weight: 700; }
+Text {
+text: "Все выбранные модули развернуты в вашей системе.\n\nНажмите «Готово» для выхода из установщика.";
+color: #cccccc; font-size: 14px; wrap: word-wrap;
+}
+}
+}
+// ---------- НИЖНЯЯ ПАНЕЛЬ С КНОПКАМИ ----------
+Rectangle {
+y: parent.height - 65px;
+width: parent.width;
+height: 1px;
+background: #8F0030;
+drop-shadow-color: #ff0000;
+drop-shadow-blur: 8px;
+}
+CyberButton {
+x: 20px;
+y: parent.height - 48px;
+text: root.current-step == 4 ? "Закрыть" : "Отмена";
+clicked => { root.close-clicked(); }
+}
+HorizontalLayout {
+x: parent.width - 250px;
+y: parent.height - 48px;
+spacing: 15px;
+CyberButton {
+text: "< Назад";
+enabled: root.current-step > 0 && root.current-step < 3;
+clicked => { root.current-step -= 1; }
+}
+CyberButton {
+text: root.current-step == 2 ? "Установить" : (root.current-step == 4 ? "Готово" : "Далее >");
+enabled: !(root.current-step == 1 && !root.accept-license) && root.current-step != 3;
+clicked => {
+if (root.current-step == 4) {
+root.close-clicked();
+} else if (root.current-step == 2) {
+root.current-step = 3;
+root.start-installation();
+} else {
+root.current-step += 1;
+}
+}
+}
+}
+}
+}

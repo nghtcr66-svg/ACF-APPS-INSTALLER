@@ -1,0 +1,21 @@
+[package]
+name = "normal_acf_app_installer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+notify-rust = "4.18"
+open = "5.3"
+slint = "1.8" # или актуальная версия
+walkdir = "2" # Добавьте эту строчку
+ureq = "2"        # Добавить для скачивания файлов и API
+serde_json = "1"  # Добавить для чтения тега релиза
+include_dir = "0.7"
+rfd = "0.15" # Добавлено для открытия диалога папок
+dirs = "5" # Добавлен для определения путей AppData
+serde = { version = "1.0", features = ["derive"] }
+
+
+[build-dependencies]
+slint-build="1"
+winresource = "0.1"
