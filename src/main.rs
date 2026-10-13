@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 use include_dir::{include_dir, Dir};
 use notify_rust::Notification;
 use serde_json::Value;
@@ -164,6 +164,110 @@ fn extract_embedded_dir(
 }
 
 
+// УМНАЯ СИСТЕМНАЯ ФУНКЦИЯ С РЕКУРСИВНЫМ АВТОПОИСКОМ ЛЮБОГО EXE ДЛЯ ЯРЛЫКА
+fn create_installer_shortcuts(target_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let target_path = Path::new(target_dir);
+
+    println!("Запуск глубокого рекурсивного сканирования директории: {:?}", target_path);
+
+    let mut found_exe_path = None;
+
+    // Рекурсивно обходим вообще ВСЕ вложенные папки (максимальная глубина 5 уровней)
+    for entry in walkdir::WalkDir::new(target_path)
+        .max_depth(5)
+        .into_iter()
+        .filter_map(|e| e.ok()) 
+    {
+        let path = entry.path();
+        
+        // Ищем файлы с расширением .exe
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "exe") {
+            let file_name = path.file_name().unwrap().to_string_lossy().to_lowercase();
+            
+            // Пропускаем служебные дампы и рантайм dotnet, если они там есть
+            if !file_name.contains("dotnet") && !file_name.contains("createdump") {
+                found_exe_path = Some(path.to_path_buf());
+                break; // Как только нашли первый настоящий EXE — останавливаем поиск
+            }
+        }
+    }
+
+    // Проверяем, удалось ли что-то найти
+    let exe_path = match found_exe_path {
+        Some(path) => path,
+        None => {
+            return Err(format!(
+                "Критическая ошибка: в папке установки {:?} физически нет ни одного запускаемого .exe файла!", 
+                target_path
+            ).into());
+        }
+    };
+
+    println!("Глубокий автопоиск успешно обнаружил исполняемый файл: {:?}", exe_path);
+
+    let exe_str = exe_path.to_string_lossy().into_owned();
+    // Рабочей директорией для ярлыка делаем именно ту ПАПКУ, где физически лежит найденный EXE
+    let working_dir_str = exe_path.parent().unwrap().to_string_lossy().into_owned();
+
+    // Создаем ярлык в глобальном меню Пуск для всех пользователей
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        let mut start_menu_path = PathBuf::from(program_data);
+        start_menu_path.push("Microsoft");
+        start_menu_path.push("Windows");
+        start_menu_path.push("Start Menu");
+        start_menu_path.push("Programs");
+        start_menu_path.push("ACF"); // Подпапка в меню Пуск
+
+        // Создаем подпапку ACF в Пуске, если её ещё нет
+        fs::create_dir_all(&start_menu_path)?;
+
+        // Имя для ярлыка автоматически берём из имени найденного файла (без расширения .exe)
+        let shortcut_name = exe_path.file_stem().unwrap().to_string_lossy();
+        let shortcut_start_menu = start_menu_path.join(format!("{}.lnk", shortcut_name));
+        let shortcut_start_menu_str = shortcut_start_menu.to_string_lossy().into_owned();
+
+        // Универсальный PowerShell скрипт через COM-объект WScript.Shell
+        let ps_script = format!(
+            "$WshShell = New-Object -ComObject WScript.Shell; \
+             $Shortcut = $WshShell.CreateShortcut('{}'); \
+             $Shortcut.TargetPath = '{}'; \
+             $Shortcut.WorkingDirectory = '{}'; \
+             $Shortcut.Save()",
+            shortcut_start_menu_str, exe_str, working_dir_str
+        );
+
+        // Скрытый вызов PowerShell
+        let output = Command::new("powershell")
+            .args(&["-NoProfile", "-Command", &ps_script])
+            .output()?;
+
+        if output.status.success() {
+            println!("Глобальный системный ярлык [{}.lnk] успешно прописан в меню Пуск!", shortcut_name);
+        } else {
+            eprintln!("Системная ошибка PowerShell при сохранении ярлыка: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    } else {
+        eprintln!("Не удалось прочитать системную переменную окружения %ProgramData%");
+    }
+
+    Ok(())
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Структура для сохранения версии в JSON
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct AppConfig {
@@ -233,14 +337,16 @@ fn check_and_update_version_system(url: &str, github_release_page: &str) -> Resu
 
 
 fn main() -> Result<(), slint::PlatformError> {
-    // --- ПРОВЕРКА ОБНОВЛЕНИЙ И СРАВНЕНИЕ С JSON В APPDATA ---
-    let release_api_url = "https://api.github.com/repos/ACF137/APP-ORGANIZER/releases/latest"; 
-    let github_html_page = "https://github.com/ACF137/APP-ORGANIZER/releases/latest";
+
+    std::thread::spawn(|| {
+        let release_api_url = "https://api.github.com/repos/ACF137/APP-ORGANIZER/releases/latest"; 
+        let github_html_page = "https://github.com/ACF137/APP-ORGANIZER/releases/latest";
 
     match check_and_update_version_system(release_api_url, github_html_page) {
-        Ok(_) => println!("Проверка обновлений успешно завершена."),
-        Err(e) => eprintln!("Проверка обновлений пропущена или завершилась с ошибкой: {}", e),
-    }
+            Ok(_) => println!("Проверка обновлений успешно завершена."),
+            Err(e) => eprintln!("Проверка обновлений пропущена (ошибка сети/сессии): {}", e),
+        }
+    });
 
     // --- ПРОВЕРКА .NET 8 И АВТОМАТИЧЕСКАЯ ОФФЛАЙН-УСТАНОВКА ---
     if is_net8_installed() {
@@ -296,25 +402,57 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // Логика распаковки файлов и жесткое правило подпапки "\ACF"
+        // Логика распаковки файлов и жесткое правило подпапки "\ACF"
+        // Нативный выбор папки через проводник Windows
+    let ui_weak = main_window.as_weak();
+    main_window.on_select_folder_clicked(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            if let Some(folder_path) = rfd::FileDialog::new().pick_folder() {
+                let path_str = folder_path.to_string_lossy().into_owned();
+                ui.set_install_path(slint::SharedString::from(path_str));
+            }
+        }
+    });
+
+    // Логика распаковки файлов и умное правило подпапки "\ACF"
     let ui_weak = main_window.as_weak();
     main_window.on_start_installation(move || {
         let ui = ui_weak.upgrade().unwrap();
         let base_path_str = ui.get_install_path().to_string();
         
-        // Формируем конечный путь с принудительной подпапкой ACF
-        let mut final_path = PathBuf::from(base_path_str);
-        final_path.push("ACF");
+        let mut final_path = PathBuf::from(&base_path_str);
+        
+        // УМНАЯ ПРОВЕРКА: если путь уже заканчивается на "ACF", 
+        // то мы НЕ добавляем её ещё раз, чтобы избежать матрёшки
+        if !base_path_str.ends_with("ACF") && !base_path_str.ends_with("ACF\\") && !base_path_str.ends_with("ACF/") {
+            final_path.push("ACF");
+        }
         
         let target_path_str = final_path.to_string_lossy().into_owned();
         println!("Конечный путь развертывания: {}", target_path_str);
 
+        // Делаем клоны строк для безопасной передачи в поток
+        let path_for_extract = target_path_str.clone(); 
+        let path_for_shortcuts = target_path_str.clone(); 
+
         let thread_ui_weak = ui_weak.clone();
 
         std::thread::spawn(move || {
-            match extract_embedded_dir(&target_path_str, thread_ui_weak.clone()) {
+            match extract_embedded_dir(&path_for_extract, thread_ui_weak.clone()) {
                 Ok(_) => {
-                    println!("Установка из памяти успешно завершена!");
+                    println!("Установка из памяти успешно завершена! Синхронизация диска...");
+                    
+                    // ФИКС: Даем Windows 200 миллисекунд, чтобы полностью сбросить кэш 
+                    // файловой системы на диск и закрыть все дескрипторы файлов
+                    std::thread::sleep(Duration::from_millis(200));
+                    
+                    // Передаем чистый, проверенный путь без дубликатов
+                    match create_installer_shortcuts(&path_for_shortcuts) {
+                        Ok(_) => println!("Все системные ярлыки успешно созданы."),
+                        Err(err) => {
+                            eprintln!("Не удалось создать ярлыки приложения: {}", err);
+                        }
+                    }
                 }
                 Err(err) => {
                     eprintln!("Ошибка при записи файлов: {}", err);
@@ -331,6 +469,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             }
 
+            // Переключаем визард на экран окончания установки (Шаг 4)
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(ui) = thread_ui_weak.upgrade() {
                     ui.set_current_step(4);
@@ -339,6 +478,8 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     });
 
+    // Запуск главного цикла обработки событий графического интерфейса
     main_window.run()
 }
+
 

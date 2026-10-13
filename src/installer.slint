@@ -10,6 +10,7 @@ component CyberCheckBox inherits Rectangle {
         spacing: 10px;
         alignment: start;
         
+        // Квадратик чекбокса
         Rectangle {
             width: 18px;
             height: 18px;
@@ -20,10 +21,14 @@ component CyberCheckBox inherits Rectangle {
             drop-shadow-color: #ff0000;
             drop-shadow-blur: root.checked ? 4px : 0px;
             
+            // ПЕРЕНЕСЛИ СЮДА: Теперь крестик привязан строго к границам этого квадрата!
             if root.checked : Text {
-                text: "✕";
+                width: 100%;  // Занимает всю ширину квадрата
+                height: 100%; // Занимает всю высоту квадрата
+                text: "X";
                 color: #ffffff;
-                font-size: 10px;
+                font-size: 11px;
+                font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
@@ -41,6 +46,7 @@ component CyberCheckBox inherits Rectangle {
         clicked => { root.checked = !root.checked; }
     }
 }
+
 
 // Стандартная кнопка с поддержкой отключения (enabled)
 component CyberButton inherits Rectangle {
@@ -70,9 +76,8 @@ component CyberButton inherits Rectangle {
     }
 }
 
-// Кнопки управления окном _ и X
-component CyberIconButton inherits Rectangle {
-    in property <string> glyph;
+// Специальная кнопка СВЕРНУТЬ (с ручной корректировкой минуса)
+component CyberMinimizeButton inherits Rectangle {
     callback clicked();
 
     width: 32px;
@@ -81,9 +86,15 @@ component CyberIconButton inherits Rectangle {
     animate background { duration: 120ms; }
 
     Text {
-        text: root.glyph;
+        // Двигаем минус вручную, если он улетает вверх или вбок
+        x: 0px;
+        y: -1px; // Минус часто завышен в шрифтах, опускаем его на 1 пиксель ниже
+        width: parent.width;
+        height: parent.height;
+        text: "-";
         color: #ff2a55;
-        font-size: 16px;
+        font-size: 18px; // Делаем минус чуть крупнее и отчетливее
+        font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -92,6 +103,36 @@ component CyberIconButton inherits Rectangle {
         clicked => { root.clicked(); }
     }
 }
+
+// Специальная кнопка ЗАКРЫТЬ (с ручной корректировкой крестика)
+component CyberCloseButton inherits Rectangle {
+    callback clicked();
+
+    width: 32px;
+    height: 32px;
+    background: ta.has-hover ? #8F0030 : transparent;
+    animate background { duration: 120ms; }
+
+    Text {
+        // Если буква X косит вправо, мы жестко сдвигаем её контейнер влево
+        x: -1px; // Сдвиг на 1 пиксель влево, чтобы компенсировать косяк шрифта
+        y: 1px;  // Сдвиг на 1 пиксель вниз
+        width: parent.width;
+        height: parent.height;
+        text: "X";
+        color: #ff2a55;
+        font-size: 13px; // Идеальный размер для латинской X в квадрате 32x32
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+
 
 export component MainWindow inherits Window {
     title: "ACF APPS INSTALLER";
@@ -160,19 +201,21 @@ export component MainWindow inherits Window {
             vertical-alignment: center;
         }
 
-        CyberIconButton {
+
+                // Кнопка сворачивания
+        CyberMinimizeButton {
             x: parent.width - 64px;
             y: 1px;
-            glyph: "–";
             clicked => { root.minimize-clicked(); }
         }
 
-        CyberIconButton {
+        // Кнопка закрытия
+        CyberCloseButton {
             x: parent.width - 32px;
             y: 1px;
-            glyph: "✕";
             clicked => { root.close-clicked(); }
         }
+
 
         // ---------- ЛЕВАЯ БОКОВАЯ ПАНЕЛЬ ----------
         Rectangle {
@@ -251,18 +294,27 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // ШАГ 2: Путь и Обзор
+                        // ШАГ 2: Путь и Обзор (Перекомпонованный)
             if root.current-step == 2 : VerticalLayout {
-                spacing: 15px;
-                Text { text: "Выбор компонентов и директории"; color: #ffffff; font-size: 18px; font-weight: 700; }
-                
-                CyberCheckBox {
-                    text: "acf_app_organizer (Управление и запуск приложений)";
-                    checked <=> root.install-organizer;
-                }
+                spacing: 20px;
+                alignment: start;
 
-                Text { text: "Базовый путь установки (внутри будет автоматически создана папка ACF):"; color: #ffffff; font-size: 14px; }
+                // Заголовок шага
+                Text { 
+                    text: "Выбор директории установки"; 
+                    color: #ffffff; 
+                    font-size: 18px; 
+                    font-weight: 700; 
+                }
                 
+                // Подпись к пути (теперь сверху)
+                Text { 
+                    text: "Базовый путь установки (внутри будет автоматически создана папка ACF):"; 
+                    color: #cccccc; 
+                    font-size: 14px; 
+                }
+                
+                // Ряд выбора пути (поднят наверх)
                 HorizontalLayout {
                     spacing: 10px;
                     height: 32px;
@@ -289,7 +341,38 @@ export component MainWindow inherits Window {
                         clicked => { root.select-folder-clicked(); }
                     }
                 }
+
+                // Небольшой отступ перед описанием
+                Rectangle { height: 10px; background: transparent; }
+
+                // Заголовок для описания
+                Text { 
+                    text: "Описание компонентов системы:"; 
+                    color: #8F0030; 
+                    font-size: 13px; 
+                    font-weight: 700; 
+                }
+
+                // Нижний блок: Краткое описание (заглушка)
+                Rectangle {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1; // Занимает всё оставшееся снизу место
+                    background: #080005;
+                    border-width: 1px;
+                    border-color: #20000a;
+                    padding: 15px;
+
+                    Flickable {
+                        Text {
+                            text: "СИСТЕМНЫЙ СТАТУС: ГОТОВ К РАЗВЕРТЫВАНИЮ\n\nМастер установит основную программную среду ACF, включая все необходимые системные библиотеки, конфигурационные манифесты и модули запуска приложений.\n\nПроцесс полностью автономен и не требует подключения к внешней Сети. Все исполняемые бинарные файлы будут распакованы из защищённого локального кэша инсталлятора.";
+                            color: #a0a0a0; 
+                            font-size: 13px; 
+                            wrap: word-wrap;
+                        }
+                    }
+                }
             }
+
 
             // ШАГ 3: Прогресс
             if root.current-step == 3 : VerticalLayout {
